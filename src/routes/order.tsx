@@ -163,6 +163,8 @@ function OrderScreen() {
   const isForSelf = currentPerson?.id === personId
   const navigate = useNavigate()
 
+  const [search, setSearch] = useState('')
+
   const [orderState, setOrderState] = useState<Record<number, ItemState>>(
     () => {
       const initial: Record<number, ItemState> = {}
@@ -177,9 +179,14 @@ function OrderScreen() {
   )
   const [saving, setSaving] = useState(false)
 
+  const query = search.trim().toLowerCase()
+  const filteredItems = query
+    ? allMenuItems.filter((item) => item.name.toLowerCase().includes(query))
+    : allMenuItems
+
   const grouped = categoryOrder.reduce<Record<MenuCategory, typeof allMenuItems>>(
     (acc, cat) => {
-      acc[cat] = allMenuItems.filter((item) => item.category === cat)
+      acc[cat] = filteredItems.filter((item) => item.category === cat)
       return acc
     },
     { frietjes: [], snack: [], sauce: [], drink: [] },
@@ -238,6 +245,13 @@ function OrderScreen() {
       <h1 className="mb-6 text-3xl font-bold tracking-tight">
         {isForSelf ? 'Jouw bestelling' : `Bestelling voor ${personName}`}
       </h1>
+      <input
+        type="search"
+        placeholder="Zoeken…"
+        value={search}
+        onChange={(e) => setSearch(e.target.value)}
+        className="mb-2 w-full rounded-xl border border-border bg-card px-4 py-2.5 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+      />
       <div className="flex flex-col gap-8">
         {categoryOrder.map((cat) => (
           <CategorySection
