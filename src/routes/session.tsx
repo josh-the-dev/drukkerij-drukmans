@@ -177,6 +177,13 @@ function SessionScreen() {
           navigate({ to: '/order', search: { personId: person.id } })
         }
       />
+      <button
+        onClick={() => navigate({ to: '/summary' })}
+        className="mt-auto pt-6 text-sm text-muted-foreground hover:text-foreground"
+      >
+        Bekijk overzicht →
+      </button>
+
       {currentPerson && (
         <SessionFooter
           submitted={myStatus?.submitted ?? false}

@@ -38,6 +38,8 @@ src/
 
 ## Database
 
+Required env vars: `DATABASE_URL`, `ADMIN_PASSCODE`
+
 ```bash
 npm run db:push      # Push schema changes to Neon
 npm run db:seed      # Re-seed all data (destructive)

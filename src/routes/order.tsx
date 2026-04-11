@@ -11,7 +11,7 @@ import type { ItemState, MenuCategory } from '#/lib/types'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const categoryOrder: MenuCategory[] = ['frietjes', 'snack', 'sauce', 'drink']
+const categoryOrder: MenuCategory[] = ['frietjes', 'snack', 'sauce']
 
 // ─── Server functions ─────────────────────────────────────────────────────────
 
