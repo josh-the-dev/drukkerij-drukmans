@@ -21,6 +21,7 @@ export const sessionStatusEnum = pgEnum('session_status', ['open', 'closed'])
 export const people = pgTable('people', {
   id: serial().primaryKey(),
   name: text().notNull(),
+  canCollect: boolean('can_collect').notNull().default(true),
 })
 
 // Couples who collect together — purely for rotation suggestion logic
