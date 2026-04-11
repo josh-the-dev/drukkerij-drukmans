@@ -36,17 +36,28 @@ const getSummaryData = createServerFn().handler(async () => {
   // Totals grouped by item
   const itemMap = new Map<
     number,
-    { name: string; category: MenuCategory; total: number }
+    {
+      name: string
+      category: MenuCategory
+      total: number
+      notes: Array<{ personName: string; note: string; quantity: number }>
+    }
   >()
   for (const row of rows) {
     const existing = itemMap.get(row.menuItemId)
     if (existing) {
       existing.total += row.quantity
+      if (row.notes) {
+        existing.notes.push({ personName: row.personName, note: row.notes, quantity: row.quantity })
+      }
     } else {
       itemMap.set(row.menuItemId, {
         name: row.menuItemName,
         category: row.category,
         total: row.quantity,
+        notes: row.notes
+          ? [{ personName: row.personName, note: row.notes, quantity: row.quantity }]
+          : [],
       })
     }
   }
@@ -165,10 +176,21 @@ function SummaryScreen() {
                       {items.map((item) => (
                         <div
                           key={item.name}
-                          className="flex items-center justify-between rounded-md border bg-card px-3 py-2"
+                          className="rounded-md border bg-card px-3 py-2"
                         >
-                          <span className="text-sm">{item.name}</span>
-                          <span className="text-sm font-semibold">×{item.total}</span>
+                          <div className="flex items-center justify-between">
+                            <span className="text-sm">{item.name}</span>
+                            <span className="text-sm font-semibold">×{item.total}</span>
+                          </div>
+                          {item.notes.length > 0 && (
+                            <ul className="mt-1.5 flex flex-col gap-0.5">
+                              {item.notes.map((n, i) => (
+                                <li key={i} className="text-xs text-muted-foreground">
+                                  {n.personName}: {n.note}{n.quantity > 1 ? ` (×${n.quantity})` : ''}
+                                </li>
+                              ))}
+                            </ul>
+                          )}
                         </div>
                       ))}
                     </div>
