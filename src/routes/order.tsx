@@ -1,14 +1,244 @@
-import { createFileRoute } from '@tanstack/react-router'
+import { createFileRoute, redirect, useNavigate } from '@tanstack/react-router'
+import { createServerFn } from '@tanstack/react-start'
+import { useState } from 'react'
+import { and, desc, eq } from 'drizzle-orm'
+import { CategorySection } from '#/components/order/CategorySection'
+import { OrderFooter } from '#/components/order/OrderFooter'
+import { db } from '#/db/index'
+import { menuItems, orderItems, orders, sessions } from '#/db/schema'
+import type { ItemState, MenuCategory } from '#/lib/types'
+
+// ─── Constants ────────────────────────────────────────────────────────────────
+
+const categoryOrder: MenuCategory[] = ['frietjes', 'snack', 'sauce', 'drink']
+
+// ─── Server functions ─────────────────────────────────────────────────────────
+
+const getOrderData = createServerFn()
+  .inputValidator((data: number) => data)
+  .handler(async ({ data: personId }) => {
+    const [session] = await db
+      .select()
+      .from(sessions)
+      .where(eq(sessions.status, 'open'))
+      .orderBy(desc(sessions.date))
+      .limit(1)
+
+    const allMenuItems = await db
+      .select()
+      .from(menuItems)
+      .where(eq(menuItems.available, true))
+      .orderBy(menuItems.name)
+
+    let existingItems: Array<{
+      menuItemId: number
+      quantity: number
+      notes: string | null
+    }> = []
+
+    if (session) {
+      const [existingOrder] = await db
+        .select()
+        .from(orders)
+        .where(
+          and(
+            eq(orders.sessionId, session.id),
+            eq(orders.personId, personId),
+          ),
+        )
+        .limit(1)
+
+      if (existingOrder) {
+        existingItems = await db
+          .select({
+            menuItemId: orderItems.menuItemId,
+            quantity: orderItems.quantity,
+            notes: orderItems.notes,
+          })
+          .from(orderItems)
+          .where(eq(orderItems.orderId, existingOrder.id))
+      }
+    }
+
+    return { session: session ?? null, allMenuItems, existingItems }
+  })
+
+const saveOrder = createServerFn()
+  .inputValidator(
+    (data: {
+      personId: number
+      items: Array<{
+        menuItemId: number
+        quantity: number
+        notes: string | null
+      }>
+    }) => data,
+  )
+  .handler(async ({ data }) => {
+    const [session] = await db
+      .select()
+      .from(sessions)
+      .where(eq(sessions.status, 'open'))
+      .orderBy(desc(sessions.date))
+      .limit(1)
+
+    if (!session) throw new Error('Geen open sessie gevonden')
+
+    const existing = await db
+      .select()
+      .from(orders)
+      .where(
+        and(
+          eq(orders.sessionId, session.id),
+          eq(orders.personId, data.personId),
+        ),
+      )
+      .limit(1)
+
+    const order =
+      existing[0] ??
+      (
+        await db
+          .insert(orders)
+          .values({ sessionId: session.id, personId: data.personId })
+          .returning()
+      )[0]
+
+    if (!order) throw new Error('Kon bestelling niet aanmaken')
+
+    await db.delete(orderItems).where(eq(orderItems.orderId, order.id))
+
+    if (data.items.length > 0) {
+      await db.insert(orderItems).values(
+        data.items.map((item) => ({
+          orderId: order.id,
+          menuItemId: item.menuItemId,
+          quantity: item.quantity,
+          notes: item.notes,
+        })),
+      )
+    }
+
+    await db
+      .update(orders)
+      .set({ submittedAt: new Date() })
+      .where(eq(orders.id, order.id))
+  })
+
+// ─── Route ────────────────────────────────────────────────────────────────────
 
 export const Route = createFileRoute('/order')({
+  validateSearch: (search: Record<string, unknown>) => ({
+    personId: Number(search.personId),
+  }),
+  beforeLoad: ({ search }) => {
+    if (typeof window !== 'undefined') {
+      const stored = localStorage.getItem('drukmans_person')
+      if (!stored) throw redirect({ to: '/' })
+      const person = JSON.parse(stored) as { id: number }
+      if (person.id !== search.personId) throw redirect({ to: '/session' })
+    }
+  },
+  loaderDeps: ({ search }) => ({ personId: search.personId }),
+  loader: ({ deps }) => getOrderData({ data: deps.personId }),
   component: OrderScreen,
 })
 
+// ─── Screen ──────────────────────────────────────────────────────────────────
+
 function OrderScreen() {
+  const { allMenuItems, existingItems } = Route.useLoaderData()
+  const { personId } = Route.useSearch()
+  const navigate = useNavigate()
+
+  const [orderState, setOrderState] = useState<Record<number, ItemState>>(
+    () => {
+      const initial: Record<number, ItemState> = {}
+      for (const item of existingItems) {
+        initial[item.menuItemId] = {
+          quantity: item.quantity,
+          notes: item.notes ?? '',
+        }
+      }
+      return initial
+    },
+  )
+  const [saving, setSaving] = useState(false)
+
+  const grouped = categoryOrder.reduce<Record<MenuCategory, typeof allMenuItems>>(
+    (acc, cat) => {
+      acc[cat] = allMenuItems.filter((item) => item.category === cat)
+      return acc
+    },
+    { frietjes: [], snack: [], sauce: [], drink: [] },
+  )
+
+  function setQuantity(menuItemId: number, quantity: number) {
+    setOrderState((prev) => {
+      if (quantity <= 0) {
+        const next = { ...prev }
+        delete next[menuItemId]
+        return next
+      }
+      return {
+        ...prev,
+        [menuItemId]: { quantity, notes: prev[menuItemId]?.notes ?? '' },
+      }
+    })
+  }
+
+  function setNotes(menuItemId: number, notes: string) {
+    setOrderState((prev) => ({
+      ...prev,
+      [menuItemId]: { ...prev[menuItemId], notes },
+    }))
+  }
+
+  async function handleSubmit() {
+    setSaving(true)
+    try {
+      const items = Object.entries(orderState).map(([id, state]) => ({
+        menuItemId: Number(id),
+        quantity: state.quantity,
+        notes: state.notes || null,
+      }))
+      await saveOrder({ data: { personId, items } })
+      navigate({ to: '/session' })
+    } catch (err) {
+      console.error('Failed to save order:', err)
+      setSaving(false)
+    }
+  }
+
+  const totalItems = Object.values(orderState).reduce(
+    (sum, s) => sum + s.quantity,
+    0,
+  )
+
   return (
-    <main className="mx-auto max-w-sm px-4 pt-6">
-      <h1 className="text-3xl font-bold tracking-tight">Jouw bestelling</h1>
-      <p className="mt-2 text-muted-foreground">Komt eraan...</p>
+    <main className="mx-auto max-w-sm px-4 pb-32 pt-6">
+      <button
+        onClick={() => navigate({ to: '/session' })}
+        className="mb-4 text-sm text-muted-foreground hover:text-foreground"
+      >
+        ← Terug
+      </button>
+      <h1 className="mb-6 text-3xl font-bold tracking-tight">
+        Jouw bestelling
+      </h1>
+      <div className="flex flex-col gap-8">
+        {categoryOrder.map((cat) => (
+          <CategorySection
+            key={cat}
+            category={cat}
+            items={grouped[cat]}
+            orderState={orderState}
+            onQuantityChange={setQuantity}
+            onNotesChange={setNotes}
+          />
+        ))}
+      </div>
+      <OrderFooter totalItems={totalItems} saving={saving} onSubmit={handleSubmit} />
     </main>
   )
 }
