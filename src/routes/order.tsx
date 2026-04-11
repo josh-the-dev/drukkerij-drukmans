@@ -5,7 +5,8 @@ import { and, desc, eq } from 'drizzle-orm'
 import { CategorySection } from '#/components/order/CategorySection'
 import { OrderFooter } from '#/components/order/OrderFooter'
 import { db } from '#/db/index'
-import { menuItems, orderItems, orders, sessions } from '#/db/schema'
+import { menuItems, orderItems, orders, people, sessions } from '#/db/schema'
+import { useLocalStorage } from '#/lib/hooks'
 import type { ItemState, MenuCategory } from '#/lib/types'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -60,7 +61,18 @@ const getOrderData = createServerFn()
       }
     }
 
-    return { session: session ?? null, allMenuItems, existingItems }
+    const [person] = await db
+      .select({ name: people.name })
+      .from(people)
+      .where(eq(people.id, personId))
+      .limit(1)
+
+    return {
+      session: session ?? null,
+      allMenuItems,
+      existingItems,
+      personName: person?.name ?? null,
+    }
   })
 
 const saveOrder = createServerFn()
@@ -131,12 +143,9 @@ export const Route = createFileRoute('/order')({
   validateSearch: (search: Record<string, unknown>) => ({
     personId: Number(search.personId),
   }),
-  beforeLoad: ({ search }) => {
-    if (typeof window !== 'undefined') {
-      const stored = localStorage.getItem('drukmans_person')
-      if (!stored) throw redirect({ to: '/' })
-      const person = JSON.parse(stored) as { id: number }
-      if (person.id !== search.personId) throw redirect({ to: '/session' })
+  beforeLoad: () => {
+    if (typeof window !== 'undefined' && !localStorage.getItem('drukmans_person')) {
+      throw redirect({ to: '/' })
     }
   },
   loaderDeps: ({ search }) => ({ personId: search.personId }),
@@ -147,8 +156,11 @@ export const Route = createFileRoute('/order')({
 // ─── Screen ──────────────────────────────────────────────────────────────────
 
 function OrderScreen() {
-  const { allMenuItems, existingItems } = Route.useLoaderData()
+  const { allMenuItems, existingItems, personName } = Route.useLoaderData()
   const { personId } = Route.useSearch()
+
+  const currentPerson = useLocalStorage<{ id: number }>('drukmans_person')
+  const isForSelf = currentPerson?.id === personId
   const navigate = useNavigate()
 
   const [orderState, setOrderState] = useState<Record<number, ItemState>>(
@@ -224,7 +236,7 @@ function OrderScreen() {
         ← Terug
       </button>
       <h1 className="mb-6 text-3xl font-bold tracking-tight">
-        Jouw bestelling
+        {isForSelf ? 'Jouw bestelling' : `Bestelling voor ${personName}`}
       </h1>
       <div className="flex flex-col gap-8">
         {categoryOrder.map((cat) => (

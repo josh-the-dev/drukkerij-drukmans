@@ -6,6 +6,7 @@ import { PeopleStatusList } from '#/components/session/PeopleStatusList'
 import { SessionFooter } from '#/components/session/SessionFooter'
 import { db } from '#/db/index'
 import { orders, pairs, people, sessions } from '#/db/schema'
+import { useLocalStorage } from '#/lib/hooks'
 import type { CurrentPerson, PersonWithStatus } from '#/lib/types'
 
 // ─── Collector suggestion ────────────────────────────────────────────────────
@@ -151,8 +152,7 @@ function SessionScreen() {
   const { session, peopleWithStatus, collectorDisplay } = Route.useLoaderData()
   const navigate = useNavigate()
 
-  const stored = localStorage.getItem('drukmans_person')
-  const currentPerson: CurrentPerson | null = stored ? JSON.parse(stored) : null
+  const currentPerson = useLocalStorage<CurrentPerson>('drukmans_person')
 
   const myStatus = peopleWithStatus.find((p) => p.id === currentPerson?.id)
   const dateLabel = new Date(session.date).toLocaleDateString('nl-BE', {
@@ -173,6 +173,9 @@ function SessionScreen() {
       <PeopleStatusList
         people={peopleWithStatus}
         currentPersonId={currentPerson?.id ?? null}
+        onOrderFor={(person) =>
+          navigate({ to: '/order', search: { personId: person.id } })
+        }
       />
       {currentPerson && (
         <SessionFooter

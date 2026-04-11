@@ -3,9 +3,10 @@ import type { PersonWithStatus } from '#/lib/types'
 type Props = {
   people: PersonWithStatus[]
   currentPersonId: number | null
+  onOrderFor: (person: PersonWithStatus) => void
 }
 
-export function PeopleStatusList({ people, currentPersonId }: Props) {
+export function PeopleStatusList({ people, currentPersonId, onOrderFor }: Props) {
   const submittedCount = people.filter((p) => p.submitted).length
 
   return (
@@ -24,6 +25,7 @@ export function PeopleStatusList({ people, currentPersonId }: Props) {
             key={person.id}
             person={person}
             isYou={person.id === currentPersonId}
+            onOrder={() => onOrderFor(person)}
           />
         ))}
       </div>
@@ -34,12 +36,17 @@ export function PeopleStatusList({ people, currentPersonId }: Props) {
 function PersonRow({
   person,
   isYou,
+  onOrder,
 }: {
   person: PersonWithStatus
   isYou: boolean
+  onOrder: () => void
 }) {
   return (
-    <div className="flex items-center justify-between rounded-xl border border-border bg-card px-4 py-3">
+    <button
+      onClick={onOrder}
+      className="flex w-full items-center justify-between rounded-xl border border-border bg-card px-4 py-3 text-left transition active:scale-95"
+    >
       <div className="flex items-center gap-2">
         <span className="font-medium">{person.name}</span>
         {isYou && (
@@ -53,6 +60,6 @@ function PersonRow({
       ) : (
         <span className="h-2 w-2 rounded-full bg-muted-foreground/30" />
       )}
-    </div>
+    </button>
   )
 }

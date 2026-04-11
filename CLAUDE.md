@@ -12,7 +12,7 @@
 
 - **No non-null assertions** (`!`). Use explicit guards: `if (!value) throw new Error(...)`.
 - **No `useEffect` for navigation or redirects.** Use TanStack Router's `beforeLoad` to guard routes and throw `redirect(...)` there.
-- **No `useEffect` for data that can be derived synchronously.** Read localStorage in the render body with a `typeof window !== 'undefined'` guard.
+- **No `useEffect` for data that can be derived synchronously.** Read localStorage in the render body with a `typeof window !== 'undefined'` guard — always required since components run on the server during SSR.
 - **No Co-Authored-By in commits.**
 
 ## Project structure
