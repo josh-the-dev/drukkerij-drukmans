@@ -67,10 +67,36 @@ const getOrderData = createServerFn()
       .where(eq(people.id, personId))
       .limit(1)
 
+    // Most recent order from a previous (closed) session
+    const [lastOrder] = await db
+      .select({ id: orders.id })
+      .from(orders)
+      .innerJoin(sessions, eq(orders.sessionId, sessions.id))
+      .where(
+        and(
+          eq(orders.personId, personId),
+          eq(sessions.status, 'closed'),
+        ),
+      )
+      .orderBy(desc(sessions.date))
+      .limit(1)
+
+    const lastOrderItems = lastOrder
+      ? await db
+          .select({
+            menuItemId: orderItems.menuItemId,
+            quantity: orderItems.quantity,
+            notes: orderItems.notes,
+          })
+          .from(orderItems)
+          .where(eq(orderItems.orderId, lastOrder.id))
+      : []
+
     return {
       session: session ?? null,
       allMenuItems,
       existingItems,
+      lastOrderItems,
       personName: person?.name ?? null,
     }
   })
@@ -156,7 +182,7 @@ export const Route = createFileRoute('/order')({
 // ─── Screen ──────────────────────────────────────────────────────────────────
 
 function OrderScreen() {
-  const { allMenuItems, existingItems, personName } = Route.useLoaderData()
+  const { allMenuItems, existingItems, lastOrderItems, personName } = Route.useLoaderData()
   const { personId } = Route.useSearch()
 
   const currentPerson = useLocalStorage<{ id: number }>('drukmans_person')
@@ -178,6 +204,17 @@ function OrderScreen() {
     },
   )
   const [saving, setSaving] = useState(false)
+
+  function handleRepeatLastOrder() {
+    const repeated: Record<number, ItemState> = {}
+    for (const item of lastOrderItems) {
+      repeated[item.menuItemId] = {
+        quantity: item.quantity,
+        notes: item.notes ?? '',
+      }
+    }
+    setOrderState(repeated)
+  }
 
   const query = search.trim().toLowerCase()
   const filteredItems = query
@@ -242,9 +279,17 @@ function OrderScreen() {
       >
         ← Terug
       </button>
-      <h1 className="mb-6 text-3xl font-bold tracking-tight">
+      <h1 className="mb-3 text-3xl font-bold tracking-tight">
         {isForSelf ? 'Jouw bestelling' : `Bestelling voor ${personName}`}
       </h1>
+      {lastOrderItems.length > 0 && (
+        <button
+          onClick={handleRepeatLastOrder}
+          className="mb-6 text-sm text-muted-foreground hover:text-foreground"
+        >
+          ↩ Herhaal vorige bestelling
+        </button>
+      )}
       <input
         type="search"
         placeholder="Zoeken…"
