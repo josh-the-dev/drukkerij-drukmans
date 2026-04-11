@@ -7,6 +7,10 @@ config({ path: ['.env.local', '.env'] })
 const db = drizzle(process.env.DATABASE_URL!, { schema })
 
 async function seed() {
+  console.log('Clearing existing data...')
+  await db.delete(schema.pairs)
+  await db.delete(schema.people)
+
   console.log('Seeding people...')
 
   const insertedPeople = await db
@@ -21,7 +25,7 @@ async function seed() {
       { name: 'Mercedes', canCollect: true },
       { name: 'Lio', canCollect: false },
       { name: 'Alexis', canCollect: false },
-      { name: 'Pieter', canCollect: true },
+      { name: 'Pieter', canCollect: false },
     ])
     .returning()
 
