@@ -169,8 +169,11 @@ export const Route = createFileRoute('/order')({
   validateSearch: (search: Record<string, unknown>) => ({
     personId: Number(search.personId),
   }),
-  beforeLoad: () => {
+  beforeLoad: ({ search }) => {
     if (typeof window !== 'undefined' && !localStorage.getItem('drukmans_person')) {
+      throw redirect({ to: '/' })
+    }
+    if (isNaN(search.personId)) {
       throw redirect({ to: '/' })
     }
   },
@@ -204,6 +207,7 @@ function OrderScreen() {
     },
   )
   const [saving, setSaving] = useState(false)
+  const [saveError, setSaveError] = useState(false)
 
   function handleRepeatLastOrder() {
     const repeated: Record<number, ItemState> = {}
@@ -252,6 +256,7 @@ function OrderScreen() {
 
   async function handleSubmit() {
     setSaving(true)
+    setSaveError(false)
     try {
       const items = Object.entries(orderState).map(([id, state]) => ({
         menuItemId: Number(id),
@@ -262,6 +267,7 @@ function OrderScreen() {
       navigate({ to: '/session' })
     } catch (err) {
       console.error('Failed to save order:', err)
+      setSaveError(true)
       setSaving(false)
     }
   }
@@ -309,6 +315,11 @@ function OrderScreen() {
           />
         ))}
       </div>
+      {saveError && (
+        <p className="mt-4 text-sm text-destructive">
+          Er ging iets mis. Probeer opnieuw.
+        </p>
+      )}
       <OrderFooter totalItems={totalItems} saving={saving} onSubmit={handleSubmit} />
     </main>
   )

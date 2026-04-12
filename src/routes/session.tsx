@@ -145,7 +145,17 @@ export const Route = createFileRoute('/session')({
     if (typeof window === 'undefined') return
     const stored = localStorage.getItem('drukmans_person')
     if (!stored) throw redirect({ to: '/' })
-    const person = JSON.parse(stored) as { id: number }
+    let person: { id: number } | null = null
+    try {
+      person = JSON.parse(stored) as { id: number }
+    } catch {
+      localStorage.removeItem('drukmans_person')
+      throw redirect({ to: '/' })
+    }
+    if (!person?.id) {
+      localStorage.removeItem('drukmans_person')
+      throw redirect({ to: '/' })
+    }
     const isValid = await validatePerson({ data: person.id })
     if (!isValid) {
       localStorage.removeItem('drukmans_person')
