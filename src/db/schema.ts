@@ -6,7 +6,9 @@ import {
   serial,
   text,
   timestamp,
+  uniqueIndex,
 } from 'drizzle-orm/pg-core'
+import { sql } from 'drizzle-orm'
 
 export const menuCategoryEnum = pgEnum('menu_category', [
   'frietjes',
@@ -43,12 +45,21 @@ export const menuItems = pgTable('menu_items', {
 })
 
 // One session per Saturday
-export const sessions = pgTable('sessions', {
-  id: serial().primaryKey(),
-  date: timestamp('date').notNull(),
-  status: sessionStatusEnum().notNull().default('open'),
-  collectorId: integer('collector_id').references(() => people.id),
-})
+export const sessions = pgTable(
+  'sessions',
+  {
+    id: serial().primaryKey(),
+    date: timestamp('date').notNull(),
+    status: sessionStatusEnum().notNull().default('open'),
+    collectorId: integer('collector_id').references(() => people.id),
+  },
+  (table) => [
+    // Enforce at most one open session at a time
+    uniqueIndex('one_open_session_idx')
+      .on(table.status)
+      .where(sql`${table.status} = 'open'`),
+  ],
+)
 
 // One order per person per session
 export const orders = pgTable('orders', {

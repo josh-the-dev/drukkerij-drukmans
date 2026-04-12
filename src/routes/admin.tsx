@@ -4,7 +4,15 @@ import { and, desc, eq, isNotNull } from 'drizzle-orm'
 import { useState } from 'react'
 import { db } from '#/db/index'
 import { menuItems, orderItems, orders, people, sessions } from '#/db/schema'
+import { useLocalStorage } from '#/lib/hooks'
 import type { MenuCategory } from '#/lib/types'
+
+// ─── Auth ─────────────────────────────────────────────────────────────────────
+
+function assertAdmin(token: string) {
+  const passcode = process.env.ADMIN_PASSCODE
+  if (!passcode || token !== passcode) throw new Error('Niet geautoriseerd')
+}
 
 // ─── Server functions ─────────────────────────────────────────────────────────
 
@@ -45,17 +53,19 @@ const getAdminData = createServerFn().handler(async () => {
 })
 
 const closeSession = createServerFn()
-  .inputValidator((sessionId: number) => sessionId)
-  .handler(async ({ data: sessionId }) => {
+  .inputValidator((data: { sessionId: number; token: string }) => data)
+  .handler(async ({ data }) => {
+    assertAdmin(data.token)
     await db
       .update(sessions)
       .set({ status: 'closed' })
-      .where(eq(sessions.id, sessionId))
+      .where(eq(sessions.id, data.sessionId))
   })
 
 const setCollector = createServerFn()
-  .inputValidator((data: { sessionId: number; personId: number }) => data)
+  .inputValidator((data: { sessionId: number; personId: number; token: string }) => data)
   .handler(async ({ data }) => {
+    assertAdmin(data.token)
     await db
       .update(sessions)
       .set({ collectorId: data.personId })
@@ -63,8 +73,9 @@ const setCollector = createServerFn()
   })
 
 const setSessionDate = createServerFn()
-  .inputValidator((data: { sessionId: number; date: string }) => data)
+  .inputValidator((data: { sessionId: number; date: string; token: string }) => data)
   .handler(async ({ data }) => {
+    assertAdmin(data.token)
     await db
       .update(sessions)
       .set({ date: new Date(data.date) })
@@ -72,8 +83,9 @@ const setSessionDate = createServerFn()
   })
 
 const clearOrder = createServerFn()
-  .inputValidator((data: { sessionId: number; personId: number }) => data)
+  .inputValidator((data: { sessionId: number; personId: number; token: string }) => data)
   .handler(async ({ data }) => {
+    assertAdmin(data.token)
     const [order] = await db
       .select()
       .from(orders)
@@ -85,8 +97,9 @@ const clearOrder = createServerFn()
   })
 
 const toggleMenuItem = createServerFn()
-  .inputValidator((data: { itemId: number; available: boolean }) => data)
+  .inputValidator((data: { itemId: number; available: boolean; token: string }) => data)
   .handler(async ({ data }) => {
+    assertAdmin(data.token)
     await db
       .update(menuItems)
       .set({ available: data.available })
@@ -94,8 +107,9 @@ const toggleMenuItem = createServerFn()
   })
 
 const addMenuItem = createServerFn()
-  .inputValidator((data: { name: string; category: MenuCategory }) => data)
+  .inputValidator((data: { name: string; category: MenuCategory; token: string }) => data)
   .handler(async ({ data }) => {
+    assertAdmin(data.token)
     await db
       .insert(menuItems)
       .values({ name: data.name, category: data.category, available: true })
@@ -126,38 +140,39 @@ const categoryOrder: MenuCategory[] = ['frietjes', 'snack', 'sauce']
 function AdminScreen() {
   const { session, collectors, submittedPeople, allMenuItems } = Route.useLoaderData()
   const router = useRouter()
+  const token = useLocalStorage<string>('drukmans_admin') ?? ''
 
   async function handleCloseSession() {
     if (!session) return
-    await closeSession({ data: session.id })
+    await closeSession({ data: { sessionId: session.id, token } })
     router.invalidate()
   }
 
   async function handleSetDate(date: string) {
     if (!session) return
-    await setSessionDate({ data: { sessionId: session.id, date } })
+    await setSessionDate({ data: { sessionId: session.id, date, token } })
     router.invalidate()
   }
 
   async function handleSetCollector(personId: number) {
     if (!session) return
-    await setCollector({ data: { sessionId: session.id, personId } })
+    await setCollector({ data: { sessionId: session.id, personId, token } })
     router.invalidate()
   }
 
   async function handleToggleItem(itemId: number, available: boolean) {
-    await toggleMenuItem({ data: { itemId, available } })
+    await toggleMenuItem({ data: { itemId, available, token } })
     router.invalidate()
   }
 
   async function handleClearOrder(personId: number) {
     if (!session) return
-    await clearOrder({ data: { sessionId: session.id, personId } })
+    await clearOrder({ data: { sessionId: session.id, personId, token } })
     router.invalidate()
   }
 
   async function handleAddItem(name: string, category: MenuCategory) {
-    await addMenuItem({ data: { name, category } })
+    await addMenuItem({ data: { name, category, token } })
     router.invalidate()
   }
 

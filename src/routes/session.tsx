@@ -73,18 +73,28 @@ const getSessionData = createServerFn().handler(async () => {
     .orderBy(desc(sessions.date))
     .limit(1)
 
-  const session =
-    existingSession[0] ??
-    (
-      await db
-        .insert(sessions)
-        .values({
-          date: new Date(),
-          status: 'open',
-          collectorId: await suggestNextCollector(),
-        })
-        .returning()
-    )[0]
+  let session = existingSession[0]
+
+  if (!session) {
+    const collectorId = await suggestNextCollector()
+    const [inserted] = await db
+      .insert(sessions)
+      .values({ date: new Date(), status: 'open', collectorId })
+      .onConflictDoNothing()
+      .returning()
+
+    // If two requests raced, fetch whichever won
+    session =
+      inserted ??
+      (
+        await db
+          .select()
+          .from(sessions)
+          .where(eq(sessions.status, 'open'))
+          .orderBy(desc(sessions.date))
+          .limit(1)
+      )[0]
+  }
 
   if (!session) throw new Error('Kon sessie niet aanmaken')
 

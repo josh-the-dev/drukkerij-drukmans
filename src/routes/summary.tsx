@@ -140,7 +140,7 @@ function SummaryScreen() {
       acc[cat] = byItem.filter((i) => i.category === cat)
       return acc
     },
-    { frietjes: [], snack: [], sauce: [] },
+    { frietjes: [], snack: [], sauce: [], drink: [] },
   )
 
   return (

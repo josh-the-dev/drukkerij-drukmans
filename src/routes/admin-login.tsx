@@ -37,7 +37,7 @@ function AdminLoginScreen() {
     setError(false)
     const valid = await verifyPasscode({ data: passcode })
     if (valid) {
-      localStorage.setItem('drukmans_admin', 'true')
+      localStorage.setItem('drukmans_admin', JSON.stringify(passcode))
       navigate({ to: '/admin' })
     } else {
       setError(true)
