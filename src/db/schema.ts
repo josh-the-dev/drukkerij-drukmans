@@ -3,6 +3,7 @@ import {
   integer,
   pgEnum,
   pgTable,
+  primaryKey,
   serial,
   text,
   timestamp,
@@ -84,4 +85,35 @@ export const orderItems = pgTable('order_items', {
     .references(() => menuItems.id),
   quantity: integer().notNull().default(1),
   notes: text(),
+})
+
+// Named options that can be attached to menu items (e.g. "Licht gebakken")
+export const menuOptions = pgTable('menu_options', {
+  id: serial().primaryKey(),
+  label: text().notNull(),
+})
+
+// Which options are available for which menu items
+export const menuItemOptions = pgTable(
+  'menu_item_options',
+  {
+    menuItemId: integer('menu_item_id')
+      .notNull()
+      .references(() => menuItems.id),
+    menuOptionId: integer('menu_option_id')
+      .notNull()
+      .references(() => menuOptions.id),
+  },
+  (table) => [primaryKey({ columns: [table.menuItemId, table.menuOptionId] })],
+)
+
+// Which options were selected for a given order item
+export const orderItemOptions = pgTable('order_item_options', {
+  id: serial().primaryKey(),
+  orderItemId: integer('order_item_id')
+    .notNull()
+    .references(() => orderItems.id),
+  menuOptionId: integer('menu_option_id')
+    .notNull()
+    .references(() => menuOptions.id),
 })

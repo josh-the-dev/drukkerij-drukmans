@@ -1,24 +1,32 @@
 import { createFileRoute, redirect, useNavigate } from '@tanstack/react-router'
 import { createServerFn } from '@tanstack/react-start'
+import { useSession } from '@tanstack/react-start/server'
 import { useState } from 'react'
+import { adminSessionConfig, type AdminSessionData } from '#/lib/session'
 
-// ─── Server function ──────────────────────────────────────────────────────────
+// ─── Server functions ─────────────────────────────────────────────────────────
 
-const verifyPasscode = createServerFn()
+const loginAdmin = createServerFn()
   .inputValidator((passcode: string) => passcode)
   .handler(async ({ data: passcode }) => {
     const adminPasscode = process.env.ADMIN_PASSCODE
-    if (!adminPasscode) return false
-    return passcode === adminPasscode
+    if (!adminPasscode || passcode !== adminPasscode) return false
+    const session = await useSession<AdminSessionData>(adminSessionConfig)
+    await session.update({ isAdmin: true })
+    return true
   })
+
+const checkAdminAuth = createServerFn().handler(async () => {
+  const session = await useSession<AdminSessionData>(adminSessionConfig)
+  return session.data.isAdmin === true
+})
 
 // ─── Route ────────────────────────────────────────────────────────────────────
 
 export const Route = createFileRoute('/admin-login')({
-  beforeLoad: () => {
-    if (typeof window !== 'undefined' && localStorage.getItem('drukmans_admin')) {
-      throw redirect({ to: '/admin' })
-    }
+  beforeLoad: async () => {
+    const isAuthed = await checkAdminAuth()
+    if (isAuthed) throw redirect({ to: '/admin' })
   },
   component: AdminLoginScreen,
 })
@@ -35,9 +43,8 @@ function AdminLoginScreen() {
     e.preventDefault()
     setLoading(true)
     setError(false)
-    const valid = await verifyPasscode({ data: passcode })
+    const valid = await loginAdmin({ data: passcode })
     if (valid) {
-      localStorage.setItem('drukmans_admin', JSON.stringify(passcode))
       navigate({ to: '/admin' })
     } else {
       setError(true)

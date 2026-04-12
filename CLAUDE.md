@@ -27,6 +27,7 @@ src/
   components/     # Reusable UI components
   lib/
     hooks.ts      # useLocalStorage (SSR-safe)
+    session.ts    # Admin session config (useSession)
     utils.ts      # cn() utility
 ```
 
@@ -37,9 +38,17 @@ src/
 - **Route loaders** call server functions and return data. Components consume loader data via `Route.useLoaderData()`.
 - **Components** in `src/components/` are pure presentational or lightly stateful — they receive props and emit callbacks. No DB calls, no server functions.
 
+## Auth
+
+Admin auth uses TanStack Start's built-in sealed session (`useSession` from `@tanstack/react-start/server`). Session data is encrypted and signed into an httpOnly cookie — no token is ever passed in request bodies.
+
+- Session config lives in `src/lib/session.ts`
+- `SESSION_SECRET` must be at least 32 characters (used as the encryption key)
+- Generate one: `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`
+
 ## Database
 
-Required env vars: `DATABASE_URL`, `ADMIN_PASSCODE`
+Required env vars: `DATABASE_URL`, `ADMIN_PASSCODE`, `SESSION_SECRET`
 
 ```bash
 npm run db:push      # Push schema changes to Neon

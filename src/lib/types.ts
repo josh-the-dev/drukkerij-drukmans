@@ -10,16 +10,23 @@ export type PersonWithStatus = Person & {
 
 export type MenuCategory = 'frietjes' | 'snack' | 'sauce' | 'drink'
 
+export type MenuOption = {
+  id: number
+  label: string
+}
+
 export type MenuItem = {
   id: number
   name: string
   category: MenuCategory
   available: boolean
+  options: MenuOption[]
 }
 
 export type ItemState = {
   quantity: number
   notes: string
+  selectedOptions: number[] // menuOptionIds
 }
 
 export type CurrentPerson = {

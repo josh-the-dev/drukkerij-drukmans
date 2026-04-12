@@ -13,6 +13,7 @@ type Props = {
   orderState: Record<number, ItemState>
   onQuantityChange: (menuItemId: number, quantity: number) => void
   onNotesChange: (menuItemId: number, notes: string) => void
+  onOptionToggle: (menuItemId: number, optionId: number) => void
 }
 
 export function CategorySection({
@@ -21,6 +22,7 @@ export function CategorySection({
   orderState,
   onQuantityChange,
   onNotesChange,
+  onOptionToggle,
 }: Props) {
   if (items.length === 0) return null
 
@@ -37,6 +39,7 @@ export function CategorySection({
             state={orderState[item.id]}
             onQuantityChange={onQuantityChange}
             onNotesChange={onNotesChange}
+            onOptionToggle={onOptionToggle}
           />
         ))}
       </div>
@@ -49,11 +52,13 @@ function OrderItem({
   state,
   onQuantityChange,
   onNotesChange,
+  onOptionToggle,
 }: {
   item: MenuItem
   state: ItemState | undefined
   onQuantityChange: (menuItemId: number, quantity: number) => void
   onNotesChange: (menuItemId: number, notes: string) => void
+  onOptionToggle: (menuItemId: number, optionId: number) => void
 }) {
   const qty = state?.quantity ?? 0
 
@@ -81,10 +86,25 @@ function OrderItem({
           </button>
         </div>
       </div>
+      {qty > 0 && item.options.length > 0 && (
+        <div className="mt-3 flex flex-wrap gap-x-4 gap-y-2">
+          {item.options.map((option) => (
+            <label key={option.id} className="flex cursor-pointer items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={state?.selectedOptions.includes(option.id) ?? false}
+                onChange={() => onOptionToggle(item.id, option.id)}
+                className="h-4 w-4 rounded accent-primary"
+              />
+              {option.label}
+            </label>
+          ))}
+        </div>
+      )}
       {qty > 0 && (
         <input
           type="text"
-          placeholder="Opmerking (bv. extra crispy)"
+          placeholder="Opmerking…"
           value={state?.notes ?? ''}
           onChange={(e) => onNotesChange(item.id, e.target.value)}
           className="mt-3 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary"

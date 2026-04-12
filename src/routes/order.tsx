@@ -1,11 +1,20 @@
 import { createFileRoute, redirect, useNavigate } from '@tanstack/react-router'
 import { createServerFn } from '@tanstack/react-start'
 import { useState } from 'react'
-import { and, desc, eq } from 'drizzle-orm'
+import { and, desc, eq, inArray } from 'drizzle-orm'
 import { CategorySection } from '#/components/order/CategorySection'
 import { OrderFooter } from '#/components/order/OrderFooter'
 import { db } from '#/db/index'
-import { menuItems, orderItems, orders, people, sessions } from '#/db/schema'
+import {
+  menuItemOptions,
+  menuItems,
+  menuOptions,
+  orderItemOptions,
+  orderItems,
+  orders,
+  people,
+  sessions,
+} from '#/db/schema'
 import { useLocalStorage } from '#/lib/hooks'
 import type { ItemState, MenuCategory } from '#/lib/types'
 
@@ -25,16 +34,74 @@ const getOrderData = createServerFn()
       .orderBy(desc(sessions.date))
       .limit(1)
 
-    const allMenuItems = await db
+    const rawMenuItems = await db
       .select()
       .from(menuItems)
       .where(eq(menuItems.available, true))
       .orderBy(menuItems.name)
 
+    const optionRows = await db
+      .select({
+        menuItemId: menuItemOptions.menuItemId,
+        optionId: menuOptions.id,
+        label: menuOptions.label,
+      })
+      .from(menuItemOptions)
+      .innerJoin(menuOptions, eq(menuItemOptions.menuOptionId, menuOptions.id))
+
+    const optionsByItemId = new Map<number, Array<{ id: number; label: string }>>()
+    for (const row of optionRows) {
+      const list = optionsByItemId.get(row.menuItemId) ?? []
+      list.push({ id: row.optionId, label: row.label })
+      optionsByItemId.set(row.menuItemId, list)
+    }
+
+    const allMenuItems = rawMenuItems.map((item) => ({
+      ...item,
+      options: optionsByItemId.get(item.id) ?? [],
+    }))
+
+    async function fetchItemsWithOptions(orderId: number) {
+      const rows = await db
+        .select({
+          id: orderItems.id,
+          menuItemId: orderItems.menuItemId,
+          quantity: orderItems.quantity,
+          notes: orderItems.notes,
+        })
+        .from(orderItems)
+        .where(eq(orderItems.orderId, orderId))
+
+      if (rows.length === 0) return []
+
+      const selectedRows = await db
+        .select({
+          orderItemId: orderItemOptions.orderItemId,
+          menuOptionId: orderItemOptions.menuOptionId,
+        })
+        .from(orderItemOptions)
+        .where(inArray(orderItemOptions.orderItemId, rows.map((r) => r.id)))
+
+      const selectedByOrderItemId = new Map<number, number[]>()
+      for (const row of selectedRows) {
+        const list = selectedByOrderItemId.get(row.orderItemId) ?? []
+        list.push(row.menuOptionId)
+        selectedByOrderItemId.set(row.orderItemId, list)
+      }
+
+      return rows.map((row) => ({
+        menuItemId: row.menuItemId,
+        quantity: row.quantity,
+        notes: row.notes,
+        selectedOptions: selectedByOrderItemId.get(row.id) ?? [],
+      }))
+    }
+
     let existingItems: Array<{
       menuItemId: number
       quantity: number
       notes: string | null
+      selectedOptions: number[]
     }> = []
 
     if (session) {
@@ -50,14 +117,7 @@ const getOrderData = createServerFn()
         .limit(1)
 
       if (existingOrder) {
-        existingItems = await db
-          .select({
-            menuItemId: orderItems.menuItemId,
-            quantity: orderItems.quantity,
-            notes: orderItems.notes,
-          })
-          .from(orderItems)
-          .where(eq(orderItems.orderId, existingOrder.id))
+        existingItems = await fetchItemsWithOptions(existingOrder.id)
       }
     }
 
@@ -81,16 +141,7 @@ const getOrderData = createServerFn()
       .orderBy(desc(sessions.date))
       .limit(1)
 
-    const lastOrderItems = lastOrder
-      ? await db
-          .select({
-            menuItemId: orderItems.menuItemId,
-            quantity: orderItems.quantity,
-            notes: orderItems.notes,
-          })
-          .from(orderItems)
-          .where(eq(orderItems.orderId, lastOrder.id))
-      : []
+    const lastOrderItems = lastOrder ? await fetchItemsWithOptions(lastOrder.id) : []
 
     return {
       session: session ?? null,
@@ -109,6 +160,7 @@ const saveOrder = createServerFn()
         menuItemId: number
         quantity: number
         notes: string | null
+        selectedOptions: number[]
       }>
     }) => data,
   )
@@ -144,17 +196,45 @@ const saveOrder = createServerFn()
 
     if (!order) throw new Error('Kon bestelling niet aanmaken')
 
+    // Delete existing options before deleting order items (FK constraint)
+    const existingOrderItems = await db
+      .select({ id: orderItems.id })
+      .from(orderItems)
+      .where(eq(orderItems.orderId, order.id))
+
+    if (existingOrderItems.length > 0) {
+      await db
+        .delete(orderItemOptions)
+        .where(inArray(orderItemOptions.orderItemId, existingOrderItems.map((i) => i.id)))
+    }
+
     await db.delete(orderItems).where(eq(orderItems.orderId, order.id))
 
     if (data.items.length > 0) {
-      await db.insert(orderItems).values(
-        data.items.map((item) => ({
-          orderId: order.id,
-          menuItemId: item.menuItemId,
-          quantity: item.quantity,
-          notes: item.notes,
-        })),
-      )
+      const insertedOrderItems = await db
+        .insert(orderItems)
+        .values(
+          data.items.map((item) => ({
+            orderId: order.id,
+            menuItemId: item.menuItemId,
+            quantity: item.quantity,
+            notes: item.notes,
+          })),
+        )
+        .returning()
+
+      const optionValues = insertedOrderItems.flatMap((oi, idx) => {
+        const item = data.items[idx]
+        if (!item) return []
+        return item.selectedOptions.map((menuOptionId) => ({
+          orderItemId: oi.id,
+          menuOptionId,
+        }))
+      })
+
+      if (optionValues.length > 0) {
+        await db.insert(orderItemOptions).values(optionValues)
+      }
     }
 
     await db
@@ -201,6 +281,7 @@ function OrderScreen() {
         initial[item.menuItemId] = {
           quantity: item.quantity,
           notes: item.notes ?? '',
+          selectedOptions: item.selectedOptions,
         }
       }
       return initial
@@ -215,6 +296,7 @@ function OrderScreen() {
       repeated[item.menuItemId] = {
         quantity: item.quantity,
         notes: item.notes ?? '',
+        selectedOptions: item.selectedOptions,
       }
     }
     setOrderState(repeated)
@@ -242,7 +324,11 @@ function OrderScreen() {
       }
       return {
         ...prev,
-        [menuItemId]: { quantity, notes: prev[menuItemId]?.notes ?? '' },
+        [menuItemId]: {
+          quantity,
+          notes: prev[menuItemId]?.notes ?? '',
+          selectedOptions: prev[menuItemId]?.selectedOptions ?? [],
+        },
       }
     })
   }
@@ -254,6 +340,23 @@ function OrderScreen() {
     }))
   }
 
+  function toggleOption(menuItemId: number, optionId: number) {
+    setOrderState((prev) => {
+      const current = prev[menuItemId]
+      if (!current) return prev
+      const has = current.selectedOptions.includes(optionId)
+      return {
+        ...prev,
+        [menuItemId]: {
+          ...current,
+          selectedOptions: has
+            ? current.selectedOptions.filter((id) => id !== optionId)
+            : [...current.selectedOptions, optionId],
+        },
+      }
+    })
+  }
+
   async function handleSubmit() {
     setSaving(true)
     setSaveError(false)
@@ -262,6 +365,7 @@ function OrderScreen() {
         menuItemId: Number(id),
         quantity: state.quantity,
         notes: state.notes || null,
+        selectedOptions: state.selectedOptions,
       }))
       await saveOrder({ data: { personId, items } })
       navigate({ to: '/session' })
@@ -312,6 +416,7 @@ function OrderScreen() {
             orderState={orderState}
             onQuantityChange={setQuantity}
             onNotesChange={setNotes}
+            onOptionToggle={toggleOption}
           />
         ))}
       </div>
