@@ -4,7 +4,7 @@
 
 - **Framework**: TanStack Start (React, SSR)
 - **Routing**: TanStack Router (file-based)
-- **Database**: Neon (Postgres) via Drizzle ORM + `drizzle-orm/node-postgres`
+- **Database**: Neon (Postgres) via Drizzle ORM + `drizzle-orm/neon-http`
 - **Styling**: Tailwind CSS v4 + shadcn/ui
 - **Package manager**: npm
 
@@ -12,7 +12,7 @@
 
 - **No non-null assertions** (`!`). Use explicit guards: `if (!value) throw new Error(...)`.
 - **No `useEffect` for navigation or redirects.** Use TanStack Router's `beforeLoad` to guard routes and throw `redirect(...)` there.
-- **No `useEffect` for data that can be derived synchronously.** Read localStorage in the render body with a `typeof window !== 'undefined'` guard — always required since components run on the server during SSR.
+- **SSR-safe localStorage.** Use the `useLocalStorage` hook from `src/lib/hooks.ts` (built on `useSyncExternalStore`) — never read `localStorage` directly in render.
 - **No Co-Authored-By in commits.**
 
 ## Project structure
@@ -20,12 +20,13 @@
 ```
 src/
   db/
-    index.ts      # Drizzle client
+    index.ts      # Drizzle client (Neon serverless HTTP)
     schema.ts     # All table definitions
     seed.ts       # Seed script (npm run db:seed)
   routes/         # File-based routes — one file per page
   components/     # Reusable UI components
   lib/
+    hooks.ts      # useLocalStorage (SSR-safe)
     utils.ts      # cn() utility
 ```
 
