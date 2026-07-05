@@ -4,7 +4,7 @@ import { useSession } from '@tanstack/react-start/server'
 import { and, desc, eq, inArray, isNotNull } from 'drizzle-orm'
 import { useState } from 'react'
 import { db } from '#/db/index'
-import { menuItems, orderItemOptions, orderItems, orders, people, sessions } from '#/db/schema'
+import { menuItems, orderItemOptions, orderItems, orders, pairs, people, sessions } from '#/db/schema'
 import { adminSessionConfig, type AdminSessionData } from '#/lib/session'
 import type { MenuCategory } from '#/lib/types'
 
@@ -25,6 +25,30 @@ const logoutAdmin = createServerFn().handler(async () => {
   await session.clear()
 })
 
+// ─── Collector display ──────────────────────────────────────────────────────
+
+type PersonRow = { id: number; name: string }
+type PairRow = { personAId: number; personBId: number }
+
+// Renders a collector as "Name" or "Name & Partner" using the pair rotation units.
+function buildCollectorDisplay(
+  collectorId: number | null,
+  allPeople: Array<PersonRow>,
+  allPairs: Array<PairRow>,
+): string | null {
+  if (!collectorId) return null
+  const collector = allPeople.find((p) => p.id === collectorId)
+  if (!collector) return null
+  const partnerPair = allPairs.find(
+    (p) => p.personAId === collector.id || p.personBId === collector.id,
+  )
+  if (!partnerPair) return collector.name
+  const partnerId =
+    partnerPair.personAId === collector.id ? partnerPair.personBId : partnerPair.personAId
+  const partner = allPeople.find((p) => p.id === partnerId)
+  return partner ? `${collector.name} & ${partner.name}` : collector.name
+}
+
 // ─── Server functions ─────────────────────────────────────────────────────────
 
 const getAdminData = createServerFn().handler(async () => {
@@ -39,6 +63,26 @@ const getAdminData = createServerFn().handler(async () => {
     .select()
     .from(people)
     .orderBy(people.name)
+
+  const allPairs = await db.select().from(pairs)
+
+  // Past pickups — who collected, most recent first
+  const pastSessions = await db
+    .select({
+      id: sessions.id,
+      date: sessions.date,
+      collectorId: sessions.collectorId,
+    })
+    .from(sessions)
+    .where(and(eq(sessions.status, 'closed'), isNotNull(sessions.collectorId)))
+    .orderBy(desc(sessions.date))
+    .limit(12)
+
+  const collectorHistory = pastSessions.map((s) => ({
+    id: s.id,
+    date: s.date,
+    collectorDisplay: buildCollectorDisplay(s.collectorId, allPeople, allPairs),
+  }))
 
   const allMenuItems = await db
     .select()
@@ -60,6 +104,7 @@ const getAdminData = createServerFn().handler(async () => {
     collectors: allPeople.filter((p) => p.canCollect),
     submittedPeople,
     allMenuItems,
+    collectorHistory,
   }
 })
 
@@ -157,7 +202,8 @@ const categoryLabels: Record<string, string> = {
 const categoryOrder: MenuCategory[] = ['frietjes', 'snack', 'sauce']
 
 function AdminScreen() {
-  const { session, collectors, submittedPeople, allMenuItems } = Route.useLoaderData()
+  const { session, collectors, submittedPeople, allMenuItems, collectorHistory } =
+    Route.useLoaderData()
   const router = useRouter()
 
   async function handleCloseSession() {
@@ -295,6 +341,34 @@ function AdminScreen() {
                 >
                   Wissen
                 </button>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {/* Collector history */}
+      {collectorHistory.length > 0 && (
+        <section className="mb-8">
+          <h2 className="mb-3 text-sm font-semibold uppercase tracking-wider text-muted-foreground">
+            Afhaalgeschiedenis
+          </h2>
+          <div className="flex flex-col gap-1">
+            {collectorHistory.map((entry) => (
+              <div
+                key={entry.id}
+                className="flex items-center justify-between rounded-md border bg-card px-3 py-2"
+              >
+                <span className="text-sm font-medium">
+                  {entry.collectorDisplay ?? 'Onbekend'}
+                </span>
+                <span className="text-sm capitalize text-muted-foreground">
+                  {new Date(entry.date).toLocaleDateString('nl-BE', {
+                    day: 'numeric',
+                    month: 'short',
+                    year: 'numeric',
+                  })}
+                </span>
               </div>
             ))}
           </div>
